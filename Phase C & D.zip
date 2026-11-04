@@ -1,0 +1,92 @@
+## Phase C: response and fatigue (complete)
+
+**From pushes to damage.**
+Phase B showed what pushes the structure. Phase C turns those pushes into stress in the steel, counts the stress cycles and adds up the damage. Fatigue works like bending a paperclip: many small bends or a few big ones both wear it out.
+
+### What was done
+- **Stress at the weld:** bending stress at the girth weld at seabed level (mudline). It combines the exact wave moment with a correction for the structure's own motion (first mode, 1 % damping).
+- **Sea states:** a synthetic 6-month table of 40 sea states (mean wave height about 1.7 m), scaled to 4380 hours.
+- **Stress histories:** 3-hour time series simulated for each sea state.
+- **Rainflow counting:** sorts the irregular stress history into cycles of different sizes.
+- **S-N curve and Miner's rule:** DNV curve D with a thickness correction. Damage = sum of n / N, where n is the number of cycles and N is the number that would break the weld. Damage 1.0 means the fatigue life is used up.
+- **Cross-check:** rainflow counting and two spectral formulas (Dirlik and narrow-band) agree within about 4 %.
+- **Wind swirls (VIV):** treated as a scenario, because a simple model cannot predict how large the shaking becomes. The study counts the hours in the risky wind band and plots the damage against an assumed amplitude.
+
+### Key findings
+| # | Finding | In simple words |
+|---|---|---|
+| 1 | Waves hardly damage the bare monopile | About 0.0003 over 6 months, which is 0.03 % of the fatigue life. In a pessimistic case (95th percentile) it is about 0.003. |
+| 2 | Storms cause most of the damage | Waves above 4.5 m are only 4 % of the time but cause 47 % of the damage. |
+| 3 | The S-N curve choice matters | "In air" and "seawater with cathodic protection" give the same result. Free corrosion gives about 16 times more (0.005), which is still only about 2 % of the allowable damage. |
+| 4 | Tower without rotor: the unknown is the shaking amplitude | It sits in the risky wind band for about 1330 hours. The weld uses up the allowable damage only if the tower top swings about 0.4 m. A rough code-style estimate gives about 0.09 m. |
+| 5 | The parked full turbine is a warning, not a result | Waves give 0.02 (up to 0.4 pessimistic) because it has no aerodynamic damping in this model and its frequency is fed by the tail of the wave spectrum. |
+
+### 6-month damage from waves
+| Stage | Damage (waves) | Pessimistic (95th percentile) |
+|---|---|---|
+| Bare monopile | 0.0003 | 0.003 |
+| + Transition piece | 0.0004 | 0.003 |
+| + Tower | 0.0005 | 0.005 |
+| + Nacelle and rotor (qualitative only) | 0.02 | 0.4 |
+
+The allowable damage is about 0.33 (design fatigue factor 3, illustrative).
+
+![Response spectrum and stress history](fig_response.png)
+![Damage per sea state](fig_damage.png)
+![VIV scenario](fig_viv.png)
+
+### Limits
+- Linear soil, one bending mode, constant 1 % damping, no aerodynamic damping.
+- Nominal stress at one weld section, no stress concentration factors.
+- The sea-state table and wind statistics are synthetic. The VIV amplitude is an assumption.
+- S-N parameters and the thickness correction were entered from memory and must be checked against DNV-RP-C203 before any number is reused.
+
+Scripts: `phase_c_fatigue.py`, `fatigue.py`, `viv.py`, `loads.py`, `modal.py`.
+
+---
+
+## Phase D: logger specification and uncertainty (complete)
+
+**What must a cheap, battery-powered box measure so that nothing important is missed?**
+Phase D uses the response results to define the logger, compares ways of storing data, and shows how uncertain the damage estimate is.
+
+### Logger requirements
+| Requirement | Value | Why |
+|---|---|---|
+| Measured quantity | 2 horizontal accelerations at the highest accessible point, plus inclination and temperature | The top moves the most |
+| Range | +/- 1 g | Covers storms and a strong shaking event (about 0.44 g at the damage limit for the tower stage) |
+| Noise floor | at most about 29 ug/sqrt(Hz) from 0.03 to 2 Hz | The smallest sea state that still matters gives only about 0.4 mg of motion on the bare pile |
+| Frequency band | 0.03 to 7 Hz | From the wave band up to the second mode of the bare pile |
+| Sampling rate | 25 Hz for raw bursts, 10 Hz for the always-on channel | At least 2.5 times the highest frequency of interest |
+
+### Logging strategies compared (6 months)
+| Strategy | Memory | Power | Keeps | Loses |
+|---|---|---|---|---|
+| Raw continuous | about 2.4 GB | 6.2 mW | Everything | Nothing, but huge memory |
+| 10-minute statistics + spectrum | about 3 MB | 4.2 mW | RMS, maximum, spectrum | Cycle order, short events |
+| On-board rainflow histogram | about 4 MB | 5.1 mW | Damage directly | Raw waveform |
+| Event-triggered bursts + statistics | about 300 to 700 MB | 4.6 to 5.2 mW | Full waveforms where they matter | Data outside the triggers |
+
+Memory differs by a factor of about 1000, but energy hardly differs (about 18 to 27 Wh), because the always-on sensor dominates. One primary lithium cell is enough for 6 months in this model.
+
+**Recommendation:** a hybrid. Always-on 10-minute statistics with a spectrum, an hourly rainflow histogram, and raw bursts when the wind enters the risky band or a storm arrives. The first thing to measure is the shaking amplitude of the tower stage, because this study cannot close that unknown.
+
+### Uncertainty (Monte Carlo, 1500 samples)
+The study varies soil stiffness, damping, wave severity, the VIV amplitude and how often lock-in actually occurs.
+
+| Result | Value |
+|---|---|
+| Bare monopile, waves | median 0.00035, 95th percentile 0.0027, 99th percentile 0.0065 |
+| Tower stage, waves + VIV scenario | median 0.00075, 95th percentile 0.008 |
+| Chance of exceeding the allowable damage (tower stage) | about 0.3 % |
+| What drives the spread | wave severity first, then VIV amplitude and damping. Soil stiffness hardly matters for the bare stages |
+
+![Monte Carlo spread](fig_mc.png)
+![What the logger must resolve](fig_logger.png)
+
+### Limits
+- Logger hardware numbers (sensor 3 mW, microcontroller 30 mW active, 1 uJ per stored byte) are assumptions. Check them against data sheets.
+- The Monte Carlo input distributions are judgement, not measured data.
+- Signal levels come from the first mode only, so high-frequency content is a lower bound.
+
+Script: `phase_d_logger_mc.py`.
