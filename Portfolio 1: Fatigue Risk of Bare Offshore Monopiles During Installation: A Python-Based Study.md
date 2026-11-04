@@ -3,7 +3,7 @@
 Self-study portfolio project | Riya Thripakkal Rajesh, M.Sc. ACCESS, TU Dresden
 
 > All geometry, mass, soil, sea-state and logger values are **illustrative, not site data**. Results are for learning and demonstration, not for design use.
-**Summary**
+# **Summary**
 
 Before a wind turbine is connected, its steel foundation can stand bare in the sea for months with nobody measuring it. In this project, a computer model was built with AI assistance (Claude) to estimate how much wear (fatigue) the foundation picks up during that time, and what a monitoring box should record. Waves barely wear it out. Over 6 months (4380 hours) it uses up less than 1 % of its life, and almost half of that comes from a few big storms with wave heights above 4.5 m. The stage to watch is the tower before the rotor is added. A wind speed of about 11.5 m/s, which is normal, can make it shake. This could happen for roughly 30 % of the period. The study cannot say how much, because that is hard to predict without real measurements. The tower top would need to swing by about 0.4 m to use up the safe fatigue limit, while a rough estimate gives about 0.09 m.
 
