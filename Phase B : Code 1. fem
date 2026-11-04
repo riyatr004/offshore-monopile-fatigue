@@ -1,1 +1,63 @@
+"""Beam FE model of the monopile (rebuilt from Phase A-2 parameters)."""
+import numpy as np
+from scipy.linalg import eigh
+
+E, RHO_S, RHO_W, CA = 210e9, 7850.0, 1025.0, 1.0
+Z_TIP, Z_MSL, Z_PILE_TOP, Z_TP_TOP, Z_HUB = -30.0, 30.0, 40.0, 55.0, 140.0
+M_PLAT, M_RNA = 200e3, 450e3
+NH = {"soft": 5e6, "medium": 15e6, "stiff": 40e6}  # N/m^3
+
+def section(zm, top):
+    """outer diameter, wall thickness at height zm for a given top elevation"""
+    if zm < Z_PILE_TOP: return 8.0, 0.090
+    if zm < Z_TP_TOP:   return 8.4, 0.080
+    s = (zm - Z_TP_TOP) / (Z_HUB - Z_TP_TOP)
+    return 6.5 - 2.0*s, 0.045 - 0.023*s
+
+def build(stage, nh=NH["medium"], water=True, rigid=False, dz=1.0):
+    top = [Z_PILE_TOP, Z_TP_TOP, Z_HUB, Z_HUB][stage]
+    z = np.arange(Z_TIP, top + 1e-9, dz); n = len(z); nd = 2*n
+    K = np.zeros((nd, nd)); M = np.zeros((nd, nd))
+    for e in range(n-1):
+        L = z[e+1]-z[e]; zm = 0.5*(z[e]+z[e+1])
+        D, t = section(zm, top); Di = D-2*t
+        A = np.pi/4*(D**2-Di**2); I = np.pi/64*(D**4-Di**4)
+        m = RHO_S*A
+        if water and 0 < zm < Z_MSL: m += RHO_W*CA*np.pi*D**2/4
+        k = E*I/L**3*np.array([[12,6*L,-12,6*L],[6*L,4*L**2,-6*L,2*L**2],
+                               [-12,-6*L,12,-6*L],[6*L,2*L**2,-6*L,4*L**2]])
+        mm = m*L/420*np.array([[156,22*L,54,-13*L],[22*L,4*L**2,13*L,-3*L**2],
+                               [54,13*L,156,-22*L],[-13*L,-3*L**2,-22*L,4*L**2]])
+        idx = slice(2*e, 2*e+4); K[idx, idx] += k; M[idx, idx] += mm
+    if not rigid:
+        for i in range(n):
+            if z[i] <= 0:
+                w = dz/2 if i in (0, n-1) else dz
+                K[2*i, 2*i] += nh*abs(z[i])*w
+    if stage >= 1: M[2*np.argmin(abs(z-Z_TP_TOP)), 2*np.argmin(abs(z-Z_TP_TOP))] += M_PLAT
+    if stage >= 3: M[2*(n-1), 2*(n-1)] += M_RNA
+    free = np.arange(nd)
+    if rigid:
+        i0 = np.argmin(abs(z-0)); free = np.array([d for d in free if d >= 2*i0])
+    return z, K, M, free
+
+def modes(stage, nmodes=3, **kw):
+    z, K, M, free = build(stage, **kw)
+    w2, V = eigh(K[np.ix_(free, free)], M[np.ix_(free, free)], subset_by_index=[0, nmodes-1])
+    Vf = np.zeros((K.shape[0], nmodes)); Vf[free] = V
+    f = np.sqrt(w2)/2/np.pi
+    phi = Vf[0::2, :]                       # translations
+    for j in range(nmodes): phi[:, j] /= phi[np.argmax(abs(phi[:, j])), j]
+    # generalised mass / stiffness for mode 1 with phi normalised to max=1
+    Vn = np.zeros(K.shape[0]); Vn[0::2] = phi[:, 0]; Vn[1::2] = Vf[1::2, 0]/Vf[0::2, 0][np.argmax(abs(Vf[0::2, 0]))]
+    return z, f, phi, M, K, Vf[:, 0]/Vf[0::2, 0][np.argmax(abs(Vf[0::2, 0]))]
+
+if __name__ == "__main__":
+    for st, nm in enumerate(["bare", "+TP", "+tower", "+RNA"]):
+        r = []
+        for s in NH: r.append(modes(st, nh=NH[s])[1][0])
+        print(nm, "soft/med/stiff", np.round(r, 2),
+              "nowater", round(modes(st, water=False)[1][0], 2),
+              "rigid", round(modes(st, rigid=True)[1][0], 2),
+              "modes(med)", np.round(modes(st)[1], 2))
 
