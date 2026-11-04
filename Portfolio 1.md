@@ -2,99 +2,103 @@
 
 Self-study portfolio project | Riya Thripakkal Rajesh, M.Sc. ACCESS, TU Dresden
 
+> All geometry, mass, soil, sea-state and logger values are **illustrative, not site data**. Results are for learning and demonstration, not for design use.
+
 ## Why this project
+Offshore wind turbines stand on a steel foundation called a **monopile**. The monopile is often installed months before the turbine arrives. During that time it stands in the sea **bare or only partly built**, with nobody measuring it. It is lighter, softer and less damped than the finished turbine, and waves and wind keep shaking it. Small vibrations repeated millions of times can slowly damage the steel (**fatigue**), and nobody would notice.
 
-Offshore wind foundations (monopiles) are often installed months before the turbine is
-connected and monitored. In this period the structure is bare or only partly built. It has a
-different mass, stiffness and damping than in its final state and is loaded by waves, current
-and wind. Vibrations such as vortex-induced vibration (VIV) can cause fatigue damage that
-nobody measures.
+**Research question:** how much vibration and fatigue damage can a bare monopile collect while it waits, and what should a small battery-powered logger record to capture it?
 
-**Research question:** how much vibration and fatigue damage can a bare monopile accumulate,
-and what should a low-power logger record to capture it?
-
-All geometry, mass, soil and sea-state values are **illustrative, not site data**. Results are
-for learning and demonstration, not for design use.
+## The answer in short
+| Question | Answer from this study |
+|---|---|
+| Do waves damage the bare monopile? | Hardly. Over 6 months it uses up about **0.03 % of its fatigue life** (damage index 0.0003; 1.0 would mean the life is used up). Even in a pessimistic case (95th percentile) it is only about 0.3 %. |
+| Which sea states cause the damage? | **Storms.** Waves above 4.5 m are only 4 % of the time but cause almost half (47 %) of the damage. |
+| Which stage is the one to watch? | The **tower without the rotor.** Wind swirls (vortices) behind the tower can start to shake it when the wind speed is about 11.5 m/s, a very normal wind. This happens for roughly 30 % of the 6 months. |
+| Is that dangerous? | Not shown, not ruled out. It depends on how large the shaking becomes, and a simple model cannot predict that. The study shows that the tower top would need to swing about **0.4 m** to use up the allowable fatigue life, and a rough code-style estimate gives about 0.09 m. This amplitude is what should be measured. |
+| What should the logger do? | Resolve very small accelerations and catch storms and "shaking events" instead of recording everything all the time (see Phase D). |
 
 ## Project plan and status
-
 | Phase | Content | Main outputs | Status |
 |---|---|---|---|
-| A | Structure and soil model | Beam FE model, natural frequencies and mode shapes for 4 installation stages | Complete |
-| B | Loading | JONSWAP wave spectra, Morison force spectrum, VIV check | Planned |
-| C | Response and fatigue | Response time series, stress at the mudline weld, rainflow counting, S-N curve, Miner damage for a 6-month wait | Planned |
-| D | Logger specification and uncertainty | Sensor range, noise limit, sampling rate, logging strategy comparison, Monte Carlo study | Planned |
+| A | Structure and soil model | Beam model, natural frequencies and mode shapes for 4 installation stages | Complete |
+| B | Loading | Wave spectra, wave forces, wind-vortex (VIV) check | Complete |
+| C | Response and fatigue | Stress at the mudline weld, rainflow counting, Miner damage for a 6-month wait | Complete |
+| D | Logger specification and uncertainty | Sensor range, noise limit, sampling rate, logging strategies, Monte Carlo study | Complete |
+
+---
 
 ## Phase A: structure and soil model (complete)
+**Idea in simple words:** before asking what pushes the structure, find out how fast it wobbles by itself (its natural frequency), like finding the rhythm of a swing.
 
-### A-1: cantilever column (validation)
+**A-1: cantilever column (validation).** A self-written beam model of an upright tube fixed at the base, checked against the exact textbook solution. With 20 elements, the first three modes match to three decimals. Findings: longer is slower (frequency falls roughly with 1/L^2), wider is faster (rises roughly with D), and wall thickness hardly matters for a bare tube.
 
-A self-written Euler-Bernoulli beam model of an upright, fixed-base circular tube, validated
-against the analytical solution.
+**A-2: realistic monopile in four installation stages.** Pile in the seabed (30 m embedded, 30 m water depth), transition piece, tapered tower, nacelle and rotor. Soil is modelled with springs that get stiffer with depth, and the water around the pile adds mass.
 
-![L, D and t vs first natural frequency](figures/L_D_t_vs_f.png)
-
-1. **Length:** frequency falls roughly with 1/L^2.
-2. **Diameter:** frequency rises roughly in proportion to D.
-3. **Wall thickness:** almost no effect on a bare tube (about 2 % over t = 0.03 to 0.15 m).
-
-Method: f = (beta L)^2 / (2 pi) x sqrt(EI / (m L^4)); FE with consistent mass matrix and a
-generalised eigenproblem. With 20 elements the first three modes match the analytical values to
-three decimals.
-
-### A-2: realistic monopile, four installation stages
-
-Pile in the seabed (30 m embedded, 30 m water depth), transition piece, tapered tower and
-nacelle/rotor. Soil is modelled with distributed springs (k = n_h x depth), and the submerged
-part carries hydrodynamic added mass.
-
-![Mode shapes per stage](results/mode_shapes_stages.png)
-
-| Stage | First natural frequency (Hz), medium soil |
+| Stage | First natural frequency (medium soil) |
 |---|---|
-| Bare monopile | 1.22 |
-| + Transition piece | 0.86 |
-| + Tower | 0.51 |
-| + Nacelle and rotor | 0.26 |
+| Bare monopile | 1.22 Hz |
+| + Transition piece | 0.86 Hz |
+| + Tower | 0.51 Hz |
+| + Nacelle and rotor | 0.26 Hz |
 
-Key findings:
-1. Every installed part lowers the natural frequency.
-2. Soft soil and the water around the pile both lower it. Both matter a lot for the bare pile
-   and little for the finished turbine.
-3. Mode 1 is the important bending shape; higher modes are much faster and far from the wave band.
-4. No frequency limit can be chosen; each stage that stays standing must be checked against wave
-   (about 0.08 to 0.17 Hz) and wind-vortex (VIV) excitation. The tower without the rotor is the
-   stage to watch. This is a hypothesis that Phases B and C will test.
+Every added part lowers the frequency. Soft soil and water also lower it, and they matter most for the bare pile. Waves push at about 0.08 to 0.17 Hz, so the heavier stages sit closer to the wave band.
 
-![f1 vs soil stiffness](results/f1_vs_soil_stiffness.png)
+## Phase B: what pushes the structure (complete)
+**Idea in simple words:** a push only builds up a big motion if its rhythm matches the structure's own rhythm, like pushing a swing. Two pushers matter before the turbine is connected: **waves** and **wind swirls**.
 
-Write-ups: [Phase A-1 report](reports/Phase_A_Results_Monopile_Frequency.pdf),
-[Phase A-2 report](reports/Phase_A2_Results_Realistic_Monopile.pdf).
+* Six typical North Sea sea states (wave height 1 to 4 m, period 6 to 12 s).
+* Wave force from the Morison equation. The 8 m pile is so wide that waves mostly accelerate the water around it, so drag is below 0.5 % of the load. A diffraction correction (MacCamy-Fuchs) is applied because short waves are not much longer than the pile is wide.
+* Wind check: swirls shed at a rhythm f = St x U / D (St about 0.2). Trouble starts when this matches a natural frequency.
+* Result: the bare pile and the pile with transition piece follow the waves almost statically and are far from any realistic wind speed. The **tower stages** fall inside the normal wind range.
 
-## Phase B: loading (planned)
+## Phase C: response and fatigue (complete)
+**Idea in simple words:** turn the pushes into stress in the steel, count how many stress cycles of each size occur, and add up the damage. Fatigue is like bending a paperclip: a few big bends or many small ones both wear it out.
 
-- JONSWAP wave spectra for typical North Sea sea states (Hs 1 to 4 m, Tp 6 to 12 s).
-- Linearised Morison wave force and a force spectrum along the pile:
-  F = 0.5 rho Cd D u|u| + rho Cm (pi D^2 / 4) du/dt.
-- VIV check: critical wind speed from the Strouhal relation, U = f D / St with St about 0.2,
-  compared with the natural frequencies from Phase A.
+* Stress at the weld at the seabed level (mudline), from the exact wave moment plus a correction for the structure's own motion.
+* 3-hour stress histories simulated for 40 sea states, **rainflow counting**, a DNV S-N curve (curve D) and **Miner's rule** (damage = sum of n / N).
+* A synthetic 6-month sea-state table (mean wave height about 1.7 m) turns the per-sea-state damage into a waiting-period total.
+* Cross-check: rainflow counting and two spectral formulas (Dirlik and narrow-band) agree within about 4 %.
 
-## Phase C: response and fatigue (planned)
+| Stage | 6-month damage from waves | Pessimistic (95th percentile) |
+|---|---|---|
+| Bare monopile | 0.0003 | 0.003 |
+| + Transition piece | 0.0004 | 0.003 |
+| + Tower | 0.0005 | 0.005 |
+| + Nacelle and rotor (parked, qualitative only) | 0.02 | 0.4 |
 
-- Frequency-domain response, S_x(f) = |H(f)|^2 S_F(f), and time-domain simulation.
-- Bending stress at the mudline weld from the mode shape.
-- Rainflow counting, an S-N curve (for example the DNV D-curve) and Miner's rule,
-  D = sum(n_i / N_i), for damage per sea state.
-- Accumulated damage over a 6-month waiting period using a simple sea-state scatter table.
+The allowable damage is about 0.33 (design fatigue factor 3). The parked-rotor value is a warning, not a result: it has no aerodynamic damping and depends on the tail of the wave spectrum.
 
-## Phase D: logger specification and uncertainty (planned)
+**Wind swirls (VIV)** are treated as a *scenario*, not a prediction. The study counts how long the tower sits in the risky wind band (about 1330 hours for the tower without rotor) and plots the damage against an assumed shaking amplitude.
 
-- Define sensor range, low-frequency noise limit and sampling rate (likely 10 to 50 Hz) from the
-  response results.
-- Compare logging strategies by memory and energy: raw data, statistics, rainflow cycle counts
-  and event-triggered recording.
-- Monte Carlo study on soil stiffness, damping and wave height to show the spread of the
-  damage estimate.
+## Phase D: logger specification and uncertainty (complete)
+**Idea in simple words:** what must a cheap, battery-powered box measure so that nothing important is missed?
 
-Constants and S-N curve parameters will be verified against the current standard or a textbook
-before any numbers are reported.
+| Requirement | Value | Why |
+|---|---|---|
+| Measured quantity | 2 horizontal accelerations at the highest accessible point, plus inclination and temperature | The top moves most |
+| Range | +/- 1 g | Covers storms and a strong shaking event |
+| Noise floor | at most about 29 ug/sqrt(Hz) | The smallest sea state that still matters gives only about 0.4 mg of motion |
+| Frequency band | 0.03 to 7 Hz | Wave band up to the second mode of the bare pile |
+| Sampling | 25 Hz for raw bursts, 10 Hz for the always-on channel | At least 2.5 times the highest frequency of interest |
+
+| Logging strategy (6 months) | Memory | Keeps |
+|---|---|---|
+| Raw continuous | about 2.4 GB | Everything |
+| 10-minute statistics + spectrum | about 3 MB | Spectra and exposure, not cycle order |
+| On-board rainflow histogram | about 4 MB | Damage directly |
+| Event-triggered raw bursts + statistics | about 300 to 700 MB | Full waveforms where they matter |
+
+Energy hardly differs between strategies (about 18 to 27 Wh), because the always-on sensor dominates. **Recommendation:** a hybrid of statistics, an hourly rainflow histogram and event-triggered raw bursts.
+
+**Monte Carlo (1500 samples)** varies soil stiffness, damping, wave severity and VIV inputs. The spread of the damage is mostly driven by how severe the waves are, then by the VIV amplitude and damping. Soil stiffness hardly matters for the bare stages.
+
+---
+
+## Honest limits
+* Soil is linear (real soil is nonlinear and degrades under cyclic loading); only the first bending mode is used; damping is fixed at 1 % with no aerodynamic damping.
+* Simplified waves: no breaking waves, slamming, current or marine growth. Sea states and wind statistics are generic, not from a site.
+* The VIV amplitude is an assumption, and the wind-vortex rule (Strouhal number 0.2, +/- 20 % band) is simplified.
+* Fatigue uses nominal stress at one weld section, without stress concentration factors.
+* **S-N curve parameters, the thickness correction and the VIV amplitude constants were entered from memory and must be checked against the current standard (DNV-RP-C203 / C205, EN 1991-1-4) before any number is reused.**
+* Logger hardware numbers are assumptions. Monte Carlo input distributions are judgement, not data.
