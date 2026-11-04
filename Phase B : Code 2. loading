@@ -1,0 +1,170 @@
+"""Phase B: JONSWAP waves, linearised Morison loading, wave-force spectra, VIV check.
+Uses fem.py (Phase A model).  All inputs illustrative."""
+import json, numpy as np
+import matplotlib; matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from scipy.optimize import brentq
+from scipy.special import jvp, yvp
+from math import gamma as G
+import fem
+
+g, RHO_W, D_P, d = 9.81, 1025.0, 8.0, 30.0
+CM, CD, ST, ZETA = 2.0, 1.0, 0.2, 0.01
+WIND_A_HUB, WIND_K, SHEAR, Z_HUB = 11.0, 2.1, 0.11, 140.0
+STAGES = ["Bare monopile", "+ Transition piece", "+ Tower", "+ Nacelle and rotor"]
+CASES = {"LC1": (1, 6), "LC2": (2, 6), "LC3": (2, 9), "LC4": (3, 8), "LC5": (4, 8), "LC6": (4, 12)}
+f = np.linspace(0.02, 1.8, 3560); df = f[1]-f[0]; w = 2*np.pi*f
+
+def jonswap(Hs, Tp):
+    fp = 1/Tp; x = Tp/np.sqrt(Hs)
+    gam = 5.0 if x <= 3.6 else 1.0 if x >= 5 else np.exp(5.75-1.15*x)
+    sig = np.where(f <= fp, 0.07, 0.09)
+    r = np.exp(-0.5*((f/fp-1)/sig)**2)
+    S = f**-5*np.exp(-1.25*(fp/f)**4)*gam**r
+    S *= Hs**2/16/np.sum(S*df)           # exact normalisation: m0 = Hs^2/16
+    return S, gam
+
+def wavenumber(om):
+    return np.array([brentq(lambda k: o**2-g*k*np.tanh(k*d), 1e-6, 20) for o in om])
+k = wavenumber(w)
+zb = np.arange(0, d+1e-9, 1.0)                              # height above seabed (= mudline)
+KIN = np.cosh(np.outer(zb, k))/np.sinh(k*d)                 # [nz, nf]  u per unit (omega*eta)
+Uu = w*KIN                                                  # velocity amplitude per unit eta
+Aa = w**2*KIN                                               # acceleration amplitude per unit eta
+Ap = np.pi*D_P**2/4
+
+def cm_ratio(mf=True):
+    """MacCamy-Fuchs diffraction correction of the inertia coefficient, C_M(ka)/2 (->1 for small ka)."""
+    if not mf: return np.ones_like(f)
+    x = k*D_P/2
+    return (4/(np.pi*x**2)/np.sqrt(jvp(1, x)**2+yvp(1, x)**2))/2
+
+def loads(Hs, Tp, phi=None, mf=True):
+    S, gam = jonswap(Hs, Tp)
+    su = np.sqrt(np.sum(Uu**2*S*df, axis=1))                # sigma_u(z)
+    cd = 0.5*RHO_W*CD*D_P*np.sqrt(8/np.pi)*su               # Borgman linearisation [N s/m^2]
+    Fi = RHO_W*CM*Ap*Aa*cm_ratio(mf)                                     # [N/m per m]  inertia TF
+    Fd = cd[:, None]*Uu                                     # drag TF (90 deg out of phase)
+    F2 = Fi**2+Fd**2                                        # |F(z,f)|^2 per unit eta^2
+    m0, m2 = np.sum(S*df), np.sum(f**2*S*df)
+    out = dict(S=S, gam=gam, su=su, Fi=Fi, Fd=Fd, Tz=np.sqrt(m0/m2))
+    # mudline overturning moment
+    Mi = np.trapezoid(zb[:, None]*Fi, zb, axis=0); Md = np.trapezoid(zb[:, None]*Fd, zb, axis=0)
+    out["SM"] = (Mi**2+Md**2)*S; out["sigM"] = np.sqrt(np.sum(out["SM"]*df))
+    out["Fbase"] = np.sqrt(np.sum((np.trapezoid(Fi, zb, axis=0)**2+np.trapezoid(Fd, zb, axis=0)**2)*S*df))
+    out["sigF_rms_per_m"] = np.sqrt(np.sum(F2*S*df, axis=1))
+    out["drag_share"] = np.sum(Md**2*S*df)/np.sum(out["SM"]*df)
+    out["KC_max"] = su[-1]*np.sqrt(2*np.log(10800/out["Tz"]))*out["Tz"]/D_P
+    N = 10800/out["Tz"]; out["Mmax3h"] = out["sigM"]*np.sqrt(2*np.log(N))
+    if phi is not None:
+        Qi = np.trapezoid(phi[:, None]*Fi, zb, axis=0); Qd = np.trapezoid(phi[:, None]*Fd, zb, axis=0)
+        out["SQ"] = (Qi**2+Qd**2)*S
+    return out
+
+# ---- modal quantities per stage (medium soil) and soil range
+res = {"stages": {}, "cases": {}}
+modal = {}
+for st in range(4):
+    z, fr, phi, M, K, Vn = fem.modes(st)
+    zi = z[(z >= 0) & (z <= d)]; ph = phi[(z >= 0) & (z <= d), 0]
+    Mn = Vn@M@Vn; f1 = fr[0]; Kn = (2*np.pi*f1)**2*Mn
+    modal[st] = dict(f1=f1, phi_w=ph, Mn=Mn, Kn=Kn, f1_soil=[fem.modes(st, nh=fem.NH[s])[1][0] for s in ("soft", "medium", "stiff")],
+                     f2=fr[1], phitop=1.0)
+    res["stages"][STAGES[st]] = dict(f1=f1, f1_soft=modal[st]["f1_soil"][0], f1_stiff=modal[st]["f1_soil"][2], f2=fr[1],
+                                     Mn_t=Mn/1e3, phi_mudline_to_30=float(ph[-1]))
+cases = {}
+for name, (Hs, Tp) in CASES.items():
+    L0 = loads(Hs, Tp); cases[name] = L0
+    row = dict(Hs=Hs, Tp=Tp, gamma=L0["gam"], Tz=L0["Tz"], Fbase_rms_MN=L0["Fbase"]/1e6, Mrms_MNm=L0["sigM"]/1e6,
+               Mmax3h_MNm=L0["Mmax3h"]/1e6, drag_share=L0["drag_share"], KC=L0["KC_max"], steep=Hs/(1.56*Tp**2), daf={}, xtop_mm={}, xtop_static_mm={})
+    for st in range(4):
+        Lm = loads(Hs, Tp, phi=modal[st]["phi_w"])
+        H2 = 1/np.abs(1-(f/modal[st]["f1"])**2+2j*ZETA*f/modal[st]["f1"])**2
+        stat = np.sqrt(np.sum(Lm["SQ"]*df)); dyn = np.sqrt(np.sum(H2*Lm["SQ"]*df))
+        row["daf"][STAGES[st]] = dyn/stat
+        Lq = loads(Hs, Tp, phi=modal[st]["phi_w"], mf=False)
+        row.setdefault("xtop_morison_mm", {})[STAGES[st]] = np.sqrt(np.sum(H2*Lq["SQ"]*df))/modal[st]["Kn"]*1e3
+        row["xtop_mm"][STAGES[st]] = dyn/modal[st]["Kn"]*1e3
+        row["xtop_static_mm"][STAGES[st]] = stat/modal[st]["Kn"]*1e3
+    res["cases"][name] = row
+
+res["MF_ratio_at"] = {str(fr): float(np.interp(fr, f, cm_ratio())) for fr in (0.1, 0.17, 0.26, 0.5, 0.86)}
+res["DL_T6"] = float(D_P/(2*np.pi/k[np.argmin(abs(f-1/6))]))
+# ---- VIV
+def p_band(Uc, z):
+    A = WIND_A_HUB*(z/Z_HUB)**SHEAR
+    cdf = lambda u: 1-np.exp(-(u/A)**WIND_K)
+    return cdf(1.2*Uc)-cdf(0.8*Uc)
+viv = {}
+tops = [(40.0, 8.0), (55.0, 8.4), (140.0, 4.5), (140.0, 4.5)]
+for st in range(4):
+    z_t, D_t = tops[st]
+    fs = modal[st]["f1_soil"]
+    Uc = [fi*D_t/ST for fi in fs]
+    if st == 2:  # tower base section too
+        Uc_base = [fi*6.5/ST for fi in fs]
+    viv[STAGES[st]] = dict(D_top=D_t, f1=fs, Uc=Uc, z=z_t, P_band=[p_band(u, z_t) for u in Uc],
+                           hours_6m=[p_band(u, z_t)*4380 for u in Uc], Uc_mode2=modal[st]["f2"]*D_t/ST)
+res["viv"] = viv
+json.dump(res, open("results_B.json", "w"), indent=1, default=float)
+
+# ================= FIGURES =================
+plt.rcParams.update({"font.size": 8, "axes.grid": True, "grid.alpha": .3})
+col = plt.cm.viridis(np.linspace(0, .9, 6))
+fig, ax = plt.subplots(1, 2, figsize=(9, 3.4))
+for (n, (Hs, Tp)), c in zip(CASES.items(), col):
+    ax[0].plot(f, cases[n]["S"], color=c, label=f"{n}: Hs={Hs} m, Tp={Tp} s")
+ax[0].axvspan(.08, .17, color="tab:blue", alpha=.1)
+ax[0].text(.173, 22, "wave band\n0.08 to 0.17 Hz", fontsize=7, color="tab:blue")
+ax[0].set_xlim(0, .4); ax[0].set_xlabel("frequency f [Hz]"); ax[0].set_ylabel(r"S$_\eta$(f) [m$^2$/Hz]")
+ax[0].set_title("JONSWAP spectra (DNV $\\gamma$)"); ax[0].legend(fontsize=6.5)
+for T, c in zip([6, 8, 10, 12], plt.cm.plasma(np.linspace(0, .8, 4))):
+    i = np.argmin(abs(f-1/T)); ax[1].plot(KIN[:, i]*w[i]**2/g, zb, color=c, label=f"T = {T} s")
+ax[1].axhline(d, color="tab:blue", ls=":"); ax[1].text(.09, d-2.2, "MSL", color="tab:blue", fontsize=7)
+ax[1].set_xlabel(r"acceleration per wave amplitude, $a/(g\,\eta_a)$ [-]"); ax[1].set_ylabel("height above mudline [m]")
+ax[1].set_title("Wave acceleration along the pile"); ax[1].legend(fontsize=7)
+fig.tight_layout(); fig.savefig("fig1_waves.png", dpi=200); plt.close()
+
+fig, ax = plt.subplots(1, 2, figsize=(9, 3.6))
+L5 = cases["LC5"]
+ax[0].plot(np.sqrt(np.sum(L5["Fi"]**2*L5["S"]*df, axis=1))/1e3, zb, label="inertia", color="tab:blue")
+ax[0].plot(np.sqrt(np.sum(L5["Fd"]**2*L5["S"]*df, axis=1))/1e3, zb, label="drag (linearised)", color="tab:red")
+ax[0].plot(L5["sigF_rms_per_m"]/1e3, zb, "k--", label="total")
+ax[0].set_xlabel("RMS wave force per metre [kN/m]"); ax[0].set_ylabel("height above mudline [m]")
+ax[0].set_title("Force along the pile, LC5 (Hs 4 m, Tp 8 s)"); ax[0].legend(fontsize=7)
+ax[1].plot(f, L5["SM"]/1e12, "k", label="LC5 (Hs 4 m, Tp 8 s)")
+ax[1].plot(f, cases["LC2"]["SM"]/1e12, color="tab:gray", label="LC2 (Hs 2 m, Tp 6 s)")
+for st, c in zip(range(4), ["tab:green", "tab:orange", "tab:purple", "tab:red"]):
+    lo, hi = modal[st]["f1_soil"][0], modal[st]["f1_soil"][2]
+    ax[1].axvspan(lo, hi, color=c, alpha=.25, label=f"f$_1$ {STAGES[st]}")
+ax[1].set_xlim(0, 1.7); ax[1].set_yscale("log"); ax[1].set_ylim(1e-7, 1e3)
+ax[1].axvspan(.08, .17, color="tab:blue", alpha=.1)
+ax[1].set_xlabel("frequency f [Hz]"); ax[1].set_ylabel(r"S$_M$(f) [(MN m)$^2$/Hz]")
+ax[1].set_title("Mudline moment spectrum vs f$_1$ (soft to stiff soil)"); ax[1].legend(fontsize=6)
+fig.tight_layout(); fig.savefig("fig2_forces.png", dpi=200); plt.close()
+
+fig, ax = plt.subplots(1, 2, figsize=(9, 3.4))
+U = np.linspace(0, 70, 700); A = WIND_A_HUB
+pdf = (WIND_K/A)*(U/A)**(WIND_K-1)*np.exp(-(U/A)**WIND_K)
+ax[0].plot(U, pdf, "k", label="Weibull A=11 m/s, k=2.1 (hub)")
+for st, c in [(2, "tab:purple"), (3, "tab:red")]:
+    Uc = viv[STAGES[st]]["Uc"]
+    ax[0].axvspan(.8*Uc[0], 1.2*Uc[2], color=c, alpha=.25, label=f"lock-in band, {STAGES[st]}")
+ax[0].set_xlim(0, 30); ax[0].set_xlabel("wind speed U [m/s]"); ax[0].set_ylabel("probability density [-]")
+ax[0].set_title("Where the tower top could lock in"); ax[0].legend(fontsize=6.5)
+x = np.arange(4); width = .27
+for j, (lab, cc) in enumerate(zip(["soft", "medium", "stiff"], ["#9ecae1", "#4292c6", "#08519c"])):
+    ax[1].bar(x+(j-1)*width, [viv[s]["Uc"][j] for s in STAGES], width, color=cc, label=f"{lab} soil")
+ax[1].axhspan(5, 25, color="tab:orange", alpha=.12); ax[1].text(-.45, 22.5, "normal operating winds (~5 to 25 m/s)", fontsize=6.5)
+ax[1].set_xticks(x); ax[1].set_xticklabels(["Bare\npile", "+ TP", "+ Tower", "+ RNA"])
+ax[1].set_ylabel("critical wind speed $U_c=f_1 D/St$ [m/s]"); ax[1].set_title("Critical wind speed at stage top section")
+ax[1].set_yscale("log"); ax[1].legend(fontsize=7); ax[1].set_ylim(3, 90)
+fig.tight_layout(); fig.savefig("fig3_viv.png", dpi=200); plt.close()
+
+# ================= PRINT =================
+print("MODAL"); [print(" ", k_, {a: np.round(b, 3) for a, b in v.items() if a in ("f1", "f2")}) for k_, v in res["stages"].items()]
+print("Mn (t):", {k_: round(v["Mn_t"]) for k_, v in res["stages"].items()})
+for n, r in res["cases"].items():
+    print(n, {a: (np.round(b, 3) if not isinstance(b, dict) else {c: round(d_, 2) for c, d_ in b.items()}) for a, b in r.items()})
+for s, v in viv.items():
+    print(s, "Uc", np.round(v["Uc"], 1), "P", np.round(v["P_band"], 4), "h", np.round(v["hours_6m"], 1), "Uc2", round(v["Uc_mode2"], 1))
