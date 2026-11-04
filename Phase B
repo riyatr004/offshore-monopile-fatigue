@@ -1,1 +1,30 @@
+## Phase B: loading (complete)
+
+**What pushes the structure, and how hard?**
+Phase A showed how fast each stage wobbles on its own. Phase B asks what pushes it. A push only builds up a big motion if its rhythm matches the structure's own rhythm, like pushing a swing. Before the turbine is connected, two things push the structure: **waves**, which shove the submerged pile every 6 to 12 seconds, and **wind**, which can shed swirls (vortices) behind the tower at a steady rhythm.
+
+### What was done
+- **Sea states:** six typical North Sea cases (wave height Hs 1 to 4 m, peak period Tp 6 to 12 s), described with JONSWAP wave spectra.
+- **Wave force:** linearised Morison equation, F = 0.5 rho Cd D u|u| + rho Cm (pi D^2 / 4) du/dt, calculated along the whole pile from seabed to water surface.
+- **Diffraction correction:** the Morison equation is only valid when the pile is much narrower than the wave is long (D/L below about 0.2). The 8 m pile breaks this for short waves (D/L = 0.14 at T = 6 s), so the inertia force is corrected with the MacCamy-Fuchs method. Without it, the motion of the tower stages would be overestimated by about 40 to 70 %.
+- **Wind-vortex (VIV) check:** swirls shed at f = St x U / D (St about 0.2). Trouble starts at the critical wind speed U_c = f1 x D / St, where this rhythm meets the natural frequency from Phase A. The time spent near that wind speed was estimated from a Weibull wind distribution.
+
+### Key findings
+| # | Finding | In simple words |
+|---|---|---|
+| 1 | Waves push the pile by **inertia, not drag** | The pile is so wide (8 m) that waves mostly accelerate the water around it. Drag is below 0.5 % of the load. A sea state of Hs 4 m, Tp 8 s gives about 19 MNm RMS and about 74 MNm expected 3-hour maximum at the mudline. |
+| 2 | Bare pile and pile + transition piece follow waves **almost statically** | Their frequencies (about 0.6 to 1.5 Hz) are far above the wave band (0.08 to 0.17 Hz), so waves barely amplify the motion (factor 1.01 to 1.05). |
+| 3 | Tower without rotor: waves are fine, **wind is the risk** | Wave amplification is only 1.07 to 1.22, but the top of the tower locks in to the wind at 9 to 13 m/s, a normal wind speed. With illustrative wind statistics it sits in the risky band about 30 % of the time. |
+| 4 | Only the finished turbine amplifies waves strongly | Its frequency (0.26 Hz) sits just above the wave band, so the tail of the wave spectrum feeds it (factor 2.5 to 6.6). This value depends strongly on damping, so it is a warning sign, not a result. |
+| 5 | Phase A hypothesis confirmed, with one gap closed | Phase A flagged the tower without rotor. Phase B confirms it and also shows that the Phase A VIV table had left out the full turbine, whose top section gives a critical wind speed of only about 5 to 6 m/s. |
+
+### Wind-vortex check per stage
+| Stage | Critical wind speed (soft / medium / stiff soil) | Time in risky band (6 months) | Verdict |
+|---|---|---|---|
+| Bare monopile | 33 / 49 / 62 m/s | below 0.1 % | Too high, no concern |
+| + Transition piece | 26 / 36 / 44 m/s | below 0.1 % | Too high, no concern |
+| + Tower | 9.0 / 11.5 / 12.7 m/s | about 30 % (1330 h) | Within normal wind: check closely |
+| + Nacelle and rotor | 5.0 / 5.8 / 6.1 m/s | about 17 % (730 h) | Within normal wind; rotor and aerodynamic damping not modelled |
+
+**Important:** being inside the risky wind band is an *exposure*, not damage. Whether the tower really vibrates, and how much, depends on damping, turbulence and surface roughness. Phase C turns this exposure into stress cycles.
 
